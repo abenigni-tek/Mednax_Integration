@@ -14,16 +14,6 @@
 ;;;; starting data and accessor fns
 (def mirths-dir "vendor/mirths")
 
-(def mirths [{:version "3.9.0.b2526"
-              :sha256 "cf4cc753a8918c601944f2f4607b07f2b008d19c685d936715fe30a64dc90343"
-              :what-happened? []}
-             {:version "3.8.0.b2464"
-              :sha256 "e4606d0a9ea9d35263fb7937d61c98f26a7295d79b8bf83d0dab920cf875206d"
-              :what-happened? []}])
-
-(def mirth-9 (first mirths))
-(def mirth-8 (second mirths))
-
 (defn mirth-name [mirth]
   (str "mirthconnect-" (:version mirth) "-unix"))
 
@@ -74,7 +64,7 @@
     (let [dbdir (mirth-db-dir mirth)]
       (and (clojure.string/ends-with? dbdir "mirthdb")
            (= 0 @(:exit-code (system-test "-d" dbdir {:throw false :verbose true})))
-           (rm "-f" "-v" "--preserve-root" "--one-file-system" "-r" dbdir)))))
+           (rm "-f" "--preserve-root" "--one-file-system" "-r" dbdir)))))
 
 ;;;; A couple of helper functions to track the flow of
 ;;;; tracking the flow and outcomes
@@ -103,6 +93,33 @@
                           select-jvm-options
                           remove-mirth-db)))
 
+(def mirths [{:enabled true
+              :version "4.0.1.b293"
+              :sha256 "fd5223a15cdcaaf0d8071c1bdd9a0409fecd93fcec25e18c1daab1e9fe1f991d"
+              :what-happened? []}
+             {:enabled false
+              :version "3.12.0.b2650"
+              :sha256 "57d5790efb5fc976f7e98a47fa4acecfca39809f846975ca4450a6c42caa6f5f"
+              :what-happened? []}
+             {:enabled false
+              :version "3.11.0.b2609"
+              :sha256 "4df341312de34fb9a79083c5c1f8c2214cea6efd5b9d34ea0551dee4a2249286"
+              :what-happened? []}
+             {:enabled false
+              :version "3.9.0.b2526"
+              :sha256 "cf4cc753a8918c601944f2f4607b07f2b008d19c685d936715fe30a64dc90343"
+              :what-happened? []}
+             {:enabled true
+              :version "3.8.0.b2464"
+              :sha256 "e4606d0a9ea9d35263fb7937d61c98f26a7295d79b8bf83d0dab920cf875206d"
+              :what-happened? []}])
+
+(def mirth-4-01 (nth mirths 0))
+(def mirth-3-12 (nth mirths 1))
+(def mirth-3-11 (nth mirths 2))
+(def mirth-3-09 (nth mirths 3))
+(def mirth-3-08 (nth mirths 4))
+
 (defn make-all-mirths-ready []
   (ensure-target-dir)
   (doall
@@ -116,7 +133,7 @@
     ;; wait up to 90 seconds for the server to appear
     (loop [i 0]
       ;; (println (ps "-axw"))
-      (when (= i 0) (prn mcserver))
+      ;; (when (= i 0) (prn mcserver))
       (sh/flush mcserver)
       (when-not (or (try
                       (client/head "http://localhost:8080")
@@ -136,17 +153,20 @@
     (sh/destroy mirth-proc)
     @exit-code))
 
-(defn mirth-8-fixture [f]
-  (make-all-mirths-ready)
-  (let [mirth-proc (start-mirth mirth-8)]
-    (f)
-    (stop-mirth mirth-proc)))
+(defn mirth-fixture
+  [mirth]
+  (fn [f]
+    (when (:enabled mirth)
+    (make-all-mirths-ready)
+    (let [mirth-proc (start-mirth mirth)]
+      (f)
+      (stop-mirth mirth-proc)))))
 
-(defn mirth-9-fixture [f]
-  (make-all-mirths-ready)
-  (let [mirth-proc (start-mirth mirth-9)]
-    (f)
-    (stop-mirth mirth-proc)))
+(def mirth-3-08-fixture (mirth-fixture mirth-3-08))
+(def mirth-3-09-fixture (mirth-fixture mirth-3-09))
+(def mirth-3-11-fixture (mirth-fixture mirth-3-11))
+(def mirth-3-12-fixture (mirth-fixture mirth-3-12))
+(def mirth-4-01-fixture (mirth-fixture mirth-4-01))
 
 ;;;;;;;;;;;;;;; The following was the original script created for
 ;;;;;;;;;;;;;;; fetching and validating mirth.  It was ported to the
@@ -180,6 +200,7 @@
 ;;      printf "${MIRTH}\n"
 ;;      if [[ ! -f $(basename "${MIRTH}") ]]; then
 ;; 	 curl  -O -J -L "${MIRTH}"
+
 ;;      fi
 ;;  done
 

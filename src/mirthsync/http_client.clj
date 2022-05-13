@@ -1,17 +1,19 @@
 (ns mirthsync.http-client
   (:require [clj-http.client :as client]
-            [mirthsync.xml :as mxml]
             [clojure.data.xml :as xml]
+            [clojure.tools.logging :as log]
             [clojure.zip :as zip]
-            [clojure.tools.logging :as log]))
+            [mirthsync.interfaces :as mi]
+            [mirthsync.xml :as mxml]))
 
 (defn put-xml
   "HTTP PUTs the current api and el-loc to the server."
-  [{:keys [server el-loc ignore-cert-warnings]
-    {:keys [find-id rest-path] :as api} :api}
+  [{:keys [server el-loc ignore-cert-warnings api]}
    params]
-  (client/put (str server (rest-path api) "/" (find-id el-loc))
-              {:insecure? ignore-cert-warnings
+  (log/logf :debug "putting xml to: %s" (mi/rest-path api))
+  (client/put (str server (mi/rest-path api) "/" (mi/find-id api el-loc))
+              {:headers {:x-requested-with "XMLHttpRequest"}
+               :insecure? ignore-cert-warnings
                :body (xml/indent-str (zip/node el-loc))
                :query-params params
                :content-type "application/xml"}))
@@ -21,20 +23,24 @@
   params are supported and should be passed as one or more [name
   value] vectors. Name should be a string and value should be an xml
   string."
-  [{:keys [server ignore-cert-warnings]
-    {:keys [post-path] :as api} :api}
-   params
-   query-params]
-  (client/post (str server (post-path api))
-               {:insecure? ignore-cert-warnings
-                :query-params query-params
-                :multipart (map (fn
-                                  [[k v]]
-                                  {:name k
-                                   :content v
-                                   :mime-type "application/xml"
-                                   :encoding "UTF-8"})
-                                params)}))
+  [{:keys [server ignore-cert-warnings]} path params query-params multipart?]
+  (log/logf :debug "posting xml to: %s" path)
+  (let [base-params {:headers {:x-requested-with "XMLHttpRequest"}
+                     :insecure? ignore-cert-warnings
+                     :query-params query-params}]
+    (client/post (str server path)
+                 (if multipart?
+                   (assoc base-params :multipart (map (fn
+                                                        [[k v]]
+                                                        {:name k
+                                                         :content v
+                                                         :mime-type "application/xml"
+                                                         :encoding "UTF-8"})
+                                                      params))
+                   (assoc base-params
+                          :body params
+                          :content-type "application/xml"
+                          :accept "application/xml")))))
 
 (defn with-authentication
   "Binds a cookie store to keep auth cookies, authenticates using the
@@ -44,7 +50,8 @@
   (binding [clj-http.core/*cookie-store* (clj-http.cookies/cookie-store)]
     (client/post
      (str server "/users/_login")
-     {:form-params
+     {:headers {:x-requested-with "XMLHttpRequest"}
+      :form-params
       {:username username
        :password password}
       :insecure? ignore-cert-warnings})
@@ -52,9 +59,8 @@
 
 (defn api-url
   "Returns the constructed api url."
-  [{:keys [server]
-    {:keys [rest-path find-elements] :as api} :api}]
-  (str server (rest-path api)))
+  [{:keys [server api]}]
+  (str server (mi/rest-path api)))
 
 (defn fetch-all
   "Fetch everything at url from remote server and return a sequence of
@@ -65,8 +71,8 @@
   [{:as app-conf :keys [ignore-cert-warnings]}
    find-elements]
   (-> (api-url app-conf)
-      (client/get {:insecure? ignore-cert-warnings})
-      (:body)
-      (mxml/to-zip)
-      (find-elements)))
-
+      (client/get {:headers {:x-requested-with "XMLHttpRequest"}
+                   :insecure? ignore-cert-warnings})
+      :body
+      mxml/to-zip
+      find-elements))
